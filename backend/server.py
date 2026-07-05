@@ -1,3 +1,4 @@
+import asyncio
 import re
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
@@ -83,12 +84,15 @@ async def api_retry():
 @app.websocket("/ws")
 async def ws_endpoint(ws: WebSocket):
     await ws.accept()
-    session = app.state.session
-    if session is None:
-        await ws.send_json({"type": "log", "message": "Waiting for a scrape to start...", "level": "info"})
-        return
+    while app.state.session is None:
+        try:
+            await asyncio.wait_for(ws.receive_text(), timeout=0.5)
+        except asyncio.TimeoutError:
+            pass
+        except WebSocketDisconnect:
+            return
     try:
-        async for event in session.events():
+        async for event in app.state.session.events():
             await ws.send_json(event)
     except WebSocketDisconnect:
         return
