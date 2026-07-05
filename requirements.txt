@@ -1,0 +1,6 @@
+fastapi>=0.110
+uvicorn[standard]>=0.27
+pywebview>=5.0
+pytest>=8.0
+httpx>=0.27
+# browser-use is invoked via subprocess by scraper.py; install it separately per its docs.
