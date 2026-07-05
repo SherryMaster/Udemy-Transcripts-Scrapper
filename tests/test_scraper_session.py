@@ -1,4 +1,3 @@
-import asyncio
 from backend.scraper_session import normalize_status, ScraperSession
 
 
@@ -11,21 +10,14 @@ def test_normalize_status_mapping():
 
 
 def test_session_wraps_callback_and_normalizes():
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    session = ScraperSession(loop=loop)
-
-    loop.call_soon_threadsafe = lambda f, *a: f(*a)
+    session = ScraperSession()
     session._on_scraper_event({"type": "lecture_status", "sectionIdx": 0, "lectureIdx": 2,
-                               "status": "saved", "message": "Saved: X", "size": 99})
-
-    async def drain():
-        while session.queue.empty():
-            await asyncio.sleep(0)
-        return session.queue.get_nowait()
-
-    ev = loop.run_until_complete(drain())
+                                "status": "saved", "message": "Saved: X", "size": 99})
+    # also emits progress, so drain two events
+    ev1 = session._tqueue.get(timeout=1)
+    ev2 = session._tqueue.get(timeout=1)
+    # first event is lecture_status
+    ev = ev1 if ev1["type"] == "lecture_status" else ev2
     assert ev["type"] == "lecture_status"
     assert ev["status"] == "success"
     assert ev["size"] == 99
-    loop.close()

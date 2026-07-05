@@ -1,5 +1,5 @@
-import asyncio
 import os
+import queue as tqueue
 import threading
 import time
 
@@ -20,9 +20,8 @@ def normalize_status(native: str) -> str:
 
 
 class ScraperSession:
-    def __init__(self, loop=None):
-        self.loop = loop or asyncio.new_event_loop()
-        self.queue = asyncio.Queue()
+    def __init__(self):
+        self._tqueue = tqueue.Queue()
         self.scraper = None
         self.tracker = None
         self.thread = None
@@ -33,12 +32,7 @@ class ScraperSession:
         self.lecture_states = {}
 
     def _emit(self, event: dict):
-        if self.loop.is_closed():
-            return
-        try:
-            self.loop.call_soon_threadsafe(self.queue.put_nowait, event)
-        except RuntimeError:
-            pass
+        self._tqueue.put_nowait(event)
 
     def _on_scraper_event(self, event: dict):
         if event.get("type") == "lecture_status":
@@ -211,6 +205,7 @@ class ScraperSession:
             self._emit({"type": "error", "message": f"Retry error: {e}"})
 
     async def events(self):
+        import asyncio
         if self.course_snapshot is not None:
             yield {"type": "course_discovered", **self.course_snapshot}
             for (si, li), st in self.lecture_states.items():
@@ -220,8 +215,9 @@ class ScraperSession:
             if not self.is_running:
                 yield {"type": "done", **self._counts()}
                 return
+        loop = asyncio.get_running_loop()
         while True:
-            event = await self.queue.get()
+            event = await loop.run_in_executor(None, self._tqueue.get)
             yield event
             if event.get("type") in ("done", "error"):
                 break
