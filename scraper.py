@@ -293,7 +293,12 @@ print(page_info())
                 # Report working
                 if progress_callback:
                     for si, li, lec in batch:
-                        progress_callback(si, li, "working", f"[W{worker_id}] {lec['title'][:40]}")
+                        progress_callback({
+                            "type": "lecture_status",
+                            "sectionIdx": si, "lectureIdx": li,
+                            "status": "working",
+                            "message": f"[W{worker_id}] {lec['title'][:40]}",
+                        })
 
                 # Fetch batch
                 try:
@@ -303,28 +308,39 @@ print(page_info())
                     results = {lid: {"s": "error"} for lid in batch_ids}
 
                 # Process results
-                for si, li, lec in batch:
-                    result = results.get(lec["id"], {"s": "error"})
-                    status = result.get("s", "error")
-                    transcript = result.get("t", "")
+                with lock:
+                    for si, li, lec in batch:
+                        result = results.get(lec["id"], {"s": "error"})
+                        status = result.get("s", "error")
+                        transcript = result.get("t", "")
+                        size = None
 
-                    with lock:
                         if status == "ok" and transcript:
                             self.save_transcript(self.sections[si], lec, li + 1, transcript)
                             completed[0] += 1
+                            size = len(transcript)
                             self.log(f"  [W{worker_id}] Saved: {lec['title'][:50]} ({len(transcript)} chars)")
                             if progress_callback:
-                                progress_callback(si, li, "saved", f"Saved: {lec['title'][:50]}")
+                                progress_callback({
+                                    "type": "lecture_status", "sectionIdx": si, "lectureIdx": li,
+                                    "status": "saved", "message": f"Saved: {lec['title'][:50]}",
+                                    "size": size,
+                                })
                         elif status in ("no_captions", "no_english", "api_error"):
-                            # api_error = quiz with no video, skip silently
                             completed[0] += 1
                             if progress_callback:
-                                progress_callback(si, li, "skipped", f"Skipped ({status})")
+                                progress_callback({
+                                    "type": "lecture_status", "sectionIdx": si, "lectureIdx": li,
+                                    "status": "skipped", "message": f"Skipped ({status})",
+                                })
                         else:
                             failed[0] += 1
                             self.log(f"  [W{worker_id}] Failed ({status}): {lec['title'][:50]}")
                             if progress_callback:
-                                progress_callback(si, li, "failed", f"Failed ({status})")
+                                progress_callback({
+                                    "type": "lecture_status", "sectionIdx": si, "lectureIdx": li,
+                                    "status": "failed", "message": f"Failed ({status})",
+                                })
 
                 # Small delay between batches per worker
                 time.sleep(0.3)
@@ -343,4 +359,4 @@ print(page_info())
 
         self.log(f"\nDone! {completed[0]} completed, {failed[0]} failed.")
         if progress_callback:
-            progress_callback(-1, -1, "done", f"Completed {completed[0]}, failed {failed[0]}")
+            progress_callback({"type": "scrape_finished", "completed": completed[0], "failed": failed[0]})
