@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Dev Harness — ScraperUI replay</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <div id="app"></div>
+  <script src="/static/app.js"></script>
+  <script>
+    const CANNED = [
+      { type: 'course_discovered', courseTitle: 'React - The Complete Guide 2024',
+        sections: [
+          { index: 1, title: 'Introduction', lectures: [
+            { index: 0, id: 'l1', title: 'Welcome' }, { index: 1, id: 'l2', title: 'How to Use' },
+            { index: 2, id: 'l3', title: "Let's Go" } ] },
+          { index: 2, title: 'React Basics', lectures: [
+            { index: 0, id: 'l4', title: 'Components' }, { index: 1, id: 'l5', title: 'Props' },
+            { index: 2, id: 'l6', title: 'State' }, { index: 3, id: 'l7', title: 'Events' },
+            { index: 4, id: 'l8', title: 'Quiz 1' }, { index: 5, id: 'l9', title: 'Lists' } ] },
+        ] },
+      { type: 'lecture_status', sectionIdx: 0, lectureIdx: 0, status: 'in-progress', message: 'working', size: null },
+      { type: 'lecture_status', sectionIdx: 0, lectureIdx: 0, status: 'success', message: 'Saved', size: 1200 },
+      { type: 'lecture_status', sectionIdx: 0, lectureIdx: 1, status: 'success', message: 'Saved', size: 980 },
+      { type: 'lecture_status', sectionIdx: 0, lectureIdx: 2, status: 'skipped', message: 'no captions', size: null },
+      { type: 'progress', completed: 3, total: 9, failed: 0, skipped: 1, active: 0, success: 2, elapsedMs: 4000 },
+      { type: 'lecture_status', sectionIdx: 1, lectureIdx: 0, status: 'in-progress', message: 'working', size: null },
+      { type: 'lecture_status', sectionIdx: 1, lectureIdx: 1, status: 'in-progress', message: 'working', size: null },
+      { type: 'lecture_status', sectionIdx: 1, lectureIdx: 0, status: 'success', message: 'Saved', size: 2200 },
+      { type: 'lecture_status', sectionIdx: 1, lectureIdx: 2, status: 'failed', message: 'vtt_error', size: null },
+      { type: 'lecture_status', sectionIdx: 1, lectureIdx: 4, status: 'skipped', message: 'api_error', size: null },
+      { type: 'progress', completed: 6, total: 9, failed: 1, skipped: 2, active: 1, success: 3, elapsedMs: 12000 },
+      { type: 'lecture_status', sectionIdx: 1, lectureIdx: 1, status: 'success', message: 'Saved', size: 3100 },
+      { type: 'done', completed: 8, total: 9, failed: 1, skipped: 2, active: 0, success: 5, elapsedMs: 21000 },
+    ];
+
+    const ui = new ScraperUI();
+    ui.mount(document.getElementById('app'));
+    ui.bindControls();
+    let i = 0;
+    const tick = () => {
+      if (i >= CANNED.length) return;
+      ui.applyEvent(CANNED[i++]);
+      setTimeout(tick, 700);
+    };
+    setTimeout(tick, 400);
+  </script>
+</body>
+</html>
