@@ -1,7 +1,6 @@
 import pytest
 from fastapi.testclient import TestClient
 
-import backend.server as server_mod
 from backend.server import app, set_session_factory
 
 
@@ -37,6 +36,7 @@ def fake_factory():
     set_session_factory(lambda **kw: FakeSession())
     yield
     set_session_factory(None)
+    app.state.session = None
 
 
 def test_start_returns_202():
@@ -52,6 +52,12 @@ def test_start_validates_url():
                                         "batchSize": 5, "numThreads": 3})
     assert r.status_code == 400
     assert "url" in r.json()["error"].lower()
+
+
+def test_resume_validates_url():
+    client = TestClient(app)
+    r = client.post("/api/resume", json={"outputDir": "/tmp/out"})
+    assert r.status_code == 400
 
 
 def test_stop_and_retry():
