@@ -1,4 +1,5 @@
 import asyncio
+import os
 import threading
 import time
 
@@ -88,6 +89,7 @@ class ScraperSession:
         self._emit({"type": "progress", **self._counts()})
 
     def _run(self, url: str, output_dir: str, batch_size: int, num_threads: int, resume: bool):
+        output_dir = os.path.expanduser(output_dir)
         try:
             self.scraper = UdemyScraper(log_callback=self._on_log)
             self.tracker = ProgressTracker(output_dir)
