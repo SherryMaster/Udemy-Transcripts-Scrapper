@@ -1,7 +1,7 @@
 import re
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pathlib import Path
 
@@ -37,7 +37,7 @@ URL_RE = re.compile(r"https?://www\.udemy\.com/course/[^/]+")
 
 @app.get("/")
 async def index():
-    return JSONResponse({"status": "ok"})
+    return FileResponse(FRONTEND_DIR / "index.html")
 
 
 @app.post("/api/start")
