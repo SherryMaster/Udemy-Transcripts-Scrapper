@@ -1,0 +1,21 @@
+# Python
+__pycache__/
+*.py[cod]
+venv/
+.venv/
+env/
+
+# Runtime state
+scrape_state.json
+**/scrape_state.json
+
+# Brainstorming companion (session mockups)
+.superpowers/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
