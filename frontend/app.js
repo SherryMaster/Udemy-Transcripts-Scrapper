@@ -176,13 +176,7 @@ ScraperUI.prototype._start = function () {
 };
 
 ScraperUI.prototype._resume = function () {
-  const url = this.els.url.value.trim();
-  if (!/https?:\/\/www\.udemy\.com\/course\//.test(url)) {
-    this.els.url.classList.add('invalid');
-    this.els.urlHint.classList.add('show');
-    return;
-  }
-  this._post('/api/resume', { url, outputDir: this.els.dir.value.trim() });
+  this._post('/api/resume', { outputDir: this.els.dir.value.trim() });
 };
 
 ScraperUI.prototype._stop = function () {

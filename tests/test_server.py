@@ -54,9 +54,9 @@ def test_start_validates_url():
     assert "url" in r.json()["error"].lower()
 
 
-def test_resume_validates_url():
+def test_resume_missing_output_dir():
     client = TestClient(app)
-    r = client.post("/api/resume", json={"outputDir": "/tmp/out"})
+    r = client.post("/api/resume", json={})
     assert r.status_code == 400
 
 

@@ -92,6 +92,12 @@ class ScraperSession:
             self.scraper = UdemyScraper(log_callback=self._on_log)
             self.tracker = ProgressTracker(output_dir)
 
+            if resume:
+                slug = self.tracker.state.get("course_slug")
+                if slug:
+                    url = f"https://www.udemy.com/course/{slug}/learn"
+                    self._emit({"type": "log", "message": f"Resumed course: {slug}", "level": "info"})
+
             self._emit({"type": "log", "message": "Connecting to browser...", "level": "info"})
             self.scraper.connect_and_navigate(url)
 
@@ -157,15 +163,50 @@ class ScraperSession:
         self.stop_flag = True
 
     def retry_failed(self):
-        success = []
+        to_retry = []
         for (si, li), st in list(self.lecture_states.items()):
             if st == "failed":
-                success.append((si, li))
+                lec = self.scraper.sections[si]["lectures"][li]
+                to_retry.append((si, li, lec["id"], lec["title"]))
                 self.lecture_states[(si, li)] = "in-progress"
                 self._emit({"type": "lecture_status", "sectionIdx": si, "lectureIdx": li,
                             "status": "in-progress", "message": "Retrying", "size": None})
+        if not to_retry:
+            return
         self._emit_progress()
-        return success
+        thread = threading.Thread(target=self._run_retry, args=(to_retry,), daemon=True)
+        thread.start()
+
+    def _run_retry(self, to_retry: list):
+        try:
+            scraper = UdemyScraper(log_callback=self._on_log)
+            scraper.course_id = self.scraper.course_id
+            scraper.output_dir = self.scraper.output_dir
+            batch_ids = [item[2] for item in to_retry]
+            results = scraper.fetch_transcripts_batch(batch_ids)
+            for si, li, lid, title in to_retry:
+                result = results.get(lid, {"s": "error"})
+                status = result.get("s", "error")
+                transcript = result.get("t", "")
+                if status == "ok" and transcript:
+                    scraper.save_transcript(self.scraper.sections[si],
+                                            self.scraper.sections[si]["lectures"][li],
+                                            li + 1, transcript)
+                    self.lecture_states[(si, li)] = "success"
+                    self._emit({"type": "lecture_status", "sectionIdx": si, "lectureIdx": li,
+                                "status": "success", "message": f"Retry OK: {title[:40]}",
+                                "size": len(transcript)})
+                elif status in ("no_captions", "no_english", "api_error"):
+                    self.lecture_states[(si, li)] = "skipped"
+                    self._emit({"type": "lecture_status", "sectionIdx": si, "lectureIdx": li,
+                                "status": "skipped", "message": f"Retry skipped ({status})"})
+                else:
+                    self.lecture_states[(si, li)] = "failed"
+                    self._emit({"type": "lecture_status", "sectionIdx": si, "lectureIdx": li,
+                                "status": "failed", "message": f"Retry failed ({status})"})
+            self._emit_progress()
+        except Exception as e:
+            self._emit({"type": "error", "message": f"Retry error: {e}"})
 
     async def events(self):
         if self.course_snapshot is not None:
@@ -174,6 +215,9 @@ class ScraperSession:
                 yield {"type": "lecture_status", "sectionIdx": si, "lectureIdx": li,
                        "status": st, "message": "", "size": None}
             yield {"type": "progress", **self._counts()}
+            if not self.is_running:
+                yield {"type": "done", **self._counts()}
+                return
         while True:
             event = await self.queue.get()
             yield event
