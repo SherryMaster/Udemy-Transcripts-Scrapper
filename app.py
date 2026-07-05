@@ -3,23 +3,11 @@ import time
 import urllib.request
 
 import uvicorn
-import webview
 
 from backend.server import app, shutdown_session
 
 HOST = "127.0.0.1"
 PORT = 8765
-
-
-class JsApi:
-    def browse_directory(self):
-        import tkinter as tk
-        from tkinter import filedialog
-        root = tk.Tk()
-        root.withdraw()
-        path = filedialog.askdirectory(title="Select Output Directory")
-        root.destroy()
-        return path or ""
 
 
 def _wait_for_server(url, timeout=15):
@@ -46,12 +34,23 @@ def main():
         print("Failed to start local server. Aborting.")
         return
 
-    webview.create_window(
-        "Udemy Transcript Scraper", url,
-        width=1040, height=720, min_size=(800, 600),
-        js_api=JsApi(),
-    )
-    webview.start()
+    print(f"Udemy Transcript Scraper running at {url}")
+    print("Press Ctrl+C to stop.")
+
+    try:
+        import webview
+
+        webview.create_window(
+            "Udemy Transcript Scraper", url,
+            width=1040, height=720, min_size=(800, 600),
+        )
+        webview.start()
+    except Exception:
+        import webbrowser
+        webbrowser.open(url)
+        while True:
+            time.sleep(1)
+
     shutdown_session()
 
 
