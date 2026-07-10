@@ -29,3 +29,11 @@ class SeleniumDriverManager:
             f"{js_body}\n"
             "})().catch(e => cb(JSON.stringify({error: e.message})));"
         )
+
+    def execute_async_js(self, js_body: str, timeout: int = 60) -> str:
+        """Execute an async JS body via execute_async_script. Returns raw string."""
+        if self._driver is None:
+            raise RuntimeError("Driver not connected. Call connect() first.")
+        self._driver.set_script_timeout(timeout)
+        wrapped = self._wrap_async_js(js_body)
+        return self._driver.execute_async_script(wrapped)
