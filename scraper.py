@@ -1,27 +1,21 @@
 """
 Udemy Transcript Scraper Engine
-Uses browser-use to extract transcripts from Udemy courses via the browser's authenticated session.
-Multi-threaded with work queue for parallel processing.
+Uses undetected-chromedriver to extract transcripts from Udemy courses
+via the browser's authenticated session. Sequential batch processing with
+a single persistent driver.
 """
 import json
 import os
-import queue
 import re
-import subprocess
-import threading
 import time
 
-
-def run_browser_use(code: str, timeout: int = 30) -> str:
-    """Run code in the browser via browser-use and return the result."""
-    wrapped = f"browser-use <<'BROWSER_USE_EOF'\n{code}\nBROWSER_USE_EOF"
-    result = subprocess.run(
-        ["bash", "-c", wrapped],
-        capture_output=True, text=True, timeout=timeout
-    )
-    if result.returncode != 0:
-        raise RuntimeError(f"browser-use failed: {result.stderr[:500]}")
-    return result.stdout.strip()
+from driver import shared_manager
+from selenium.common.exceptions import (
+    TimeoutException,
+    JavascriptException,
+    WebDriverException,
+    InvalidSessionIdException,
+)
 
 
 def extract_course_slug(url: str) -> str:
@@ -46,7 +40,7 @@ def sanitize_filename(name: str) -> str:
 
 
 class UdemyScraper:
-    """Scrapes transcripts from a Udemy course using browser-use."""
+    """Scrapes transcripts from a Udemy course using undetected-chromedriver."""
 
     def __init__(self, log_callback=None):
         self.log = log_callback or (lambda msg: print(msg))
@@ -55,44 +49,39 @@ class UdemyScraper:
         self.course_slug = None
         self.sections = []
         self.output_dir = None
-
-    def _js(self, js_expression: str, timeout: int = 30) -> str:
-        """Execute JavaScript in the browser context via js() helper."""
-        python_code = f'result = js("""{js_expression}""")\nprint(result)'
-        return run_browser_use(python_code, timeout)
-
-    def _js_json(self, js_expression: str, timeout: int = 30):
-        """Execute JavaScript and parse the result as JSON."""
-        raw = self._js(js_expression, timeout)
-        return json.loads(raw)
+        self.driver = None
 
     def connect_and_navigate(self, url: str) -> bool:
-        """Connect to browser and navigate to the course page."""
+        """Connect to the persistent driver and navigate to the course page."""
         self.course_slug = extract_course_slug(url)
         self.log(f"Course slug: {self.course_slug}")
 
-        nav_code = f"""
-new_tab("https://www.udemy.com/course/{self.course_slug}/learn")
-wait_for_load()
-print(page_info())
-"""
-        result = run_browser_use(nav_code, timeout=30)
-        self.log(f"Navigation result: {result[:200]}")
+        self.driver = shared_manager.connect()
+        course_url = f"https://www.udemy.com/course/{self.course_slug}/learn"
+        self.driver.get(course_url)
+        time.sleep(2)
 
-        if "udemy.com" not in result:
-            raise RuntimeError("Failed to navigate to course page. Is Chrome open and logged in?")
+        shared_manager.ensure_logged_in()
+        self.log("Connected and navigated to course page.")
         return True
+
+    def _js(self, js_body: str, timeout: int = 30) -> str:
+        """Execute an async JS body in the browser and return the result string."""
+        return shared_manager.execute_async_js(js_body, timeout=timeout)
+
+    def _js_json(self, js_body: str, timeout: int = 30):
+        """Execute an async JS body and parse the result as JSON."""
+        raw = self._js(js_body, timeout)
+        return json.loads(raw)
 
     def discover_course(self) -> dict:
         """Discover course info: ID, title, and full curriculum."""
         self.log("Discovering course info...")
 
         code = f"""
-(async () => {{
     const resp = await fetch('/api-2.0/courses/{self.course_slug}/?fields[course]=id,title');
     const data = await resp.json();
-    return JSON.stringify({{id: data.id, title: data.title}});
-}})()
+    cb(JSON.stringify({{id: data.id, title: data.title}}));
 """
         course_info = self._js_json(code)
         self.course_id = course_info["id"]
@@ -100,7 +89,6 @@ print(page_info())
         self.log(f"Course: {self.course_title} (ID: {self.course_id})")
 
         code = f"""
-(async () => {{
     const resp = await fetch('/api/2024-01/graphql/', {{
         method: 'POST',
         headers: {{'Content-Type': 'application/json'}},
@@ -109,8 +97,7 @@ print(page_info())
         }})
     }});
     const data = await resp.json();
-    return JSON.stringify(data.data.course.curriculum.sections);
-}})()
+    cb(JSON.stringify(data.data.course.curriculum.sections));
 """
         raw_sections = self._js_json(code)
 
@@ -155,15 +142,15 @@ print(page_info())
 
     def fetch_transcripts_batch(self, lecture_ids: list, retries=2) -> dict:
         """
-        Fetch transcripts for multiple lectures in parallel within a single JS call.
-        Returns dict: {lecture_id: {s: status, t: transcript}}
+        Fetch transcripts for multiple lectures in parallel within a single
+        async JS call. Returns dict: {lecture_id: {s: status, t: transcript}}.
+        On driver-level failures, split the batch and retry recursively.
         """
         if not lecture_ids:
             return {}
 
         ids_json = json.dumps(lecture_ids)
         code = f"""
-(async () => {{
     const ids = {ids_json};
     const results = {{}};
 
@@ -205,21 +192,21 @@ print(page_info())
     }}
 
     await Promise.all(ids.map(id => fetchOne(id)));
-    return JSON.stringify(results);
-}})()
+    cb(JSON.stringify(results));
 """
         try:
             raw = self._js(code, timeout=60)
             return json.loads(raw)
-        except Exception as e:
+        except (TimeoutException, JavascriptException, WebDriverException) as e:
+            self.log(f"  Batch driver error ({type(e).__name__}): {str(e)[:80]}")
             if retries > 0 and len(lecture_ids) > 1:
-                mid = len(lecture_ids) // 2
                 time.sleep(0.5)
+                mid = len(lecture_ids) // 2
                 left = self.fetch_transcripts_batch(lecture_ids[:mid], retries - 1)
                 right = self.fetch_transcripts_batch(lecture_ids[mid:], retries - 1)
                 left.update(right)
                 return left
-            raise
+            return {lid: {"s": "error"} for lid in lecture_ids}
 
     def save_transcript(self, section: dict, lecture: dict, lecture_index: int, transcript: str):
         """Save a transcript to a file."""
@@ -236,10 +223,10 @@ print(page_info())
         return filepath
 
     def scrape_parallel(self, base_dir: str, progress_callback=None, stop_check=None,
-                        batch_size=4, num_threads=3, skip_discovery=False):
+                        batch_size=40, num_threads=3, skip_discovery=False):
         """
-        Multi-threaded scraping with work queue.
-        If skip_discovery=True, assumes discover_course() was already called.
+        Sequential batch scraping with a single persistent driver.
+        (Name kept for backward compat; num_threads is ignored.)
         """
         if not skip_discovery:
             self.discover_course()
@@ -247,116 +234,72 @@ print(page_info())
         else:
             self.log(f"Using pre-discovered course: {self.course_title}")
 
-        # Build work queue: all lectures (quizzes will fail fast with api_error)
-        work_queue = queue.Queue()
-        total_lectures = 0
-
+        all_lectures = []
         for si, section in enumerate(self.sections):
             for li, lecture in enumerate(section["lectures"]):
-                total_lectures += 1
-                work_queue.put((si, li, lecture))
+                all_lectures.append((si, li, lecture))
 
-        self.log(f"Work queue: {work_queue.qsize()} items to process")
+        self.log(f"Processing {len(all_lectures)} lectures in batches of {batch_size}")
 
-        # Shared state
-        completed = [0]
-        failed = [0]
-        lock = threading.Lock()
-        stop_flag = [False]
+        completed = 0
+        failed = 0
 
-        def worker(worker_id):
-            """Worker thread: pull batches from queue and process."""
-            scraper = UdemyScraper(log_callback=self.log)
-            scraper.course_id = self.course_id
-            scraper.output_dir = self.output_dir
+        for start in range(0, len(all_lectures), batch_size):
+            if stop_check and stop_check():
+                self.log("Stop requested. Halting.")
+                break
 
-            while not stop_flag[0]:
-                # Check external stop
-                if stop_check and stop_check():
-                    stop_flag[0] = True
-                    break
+            batch = all_lectures[start:start + batch_size]
+            batch_ids = [item[2]["id"] for item in batch]
 
-                # Gather a batch from the queue
-                batch = []
-                while len(batch) < batch_size and not work_queue.empty():
-                    try:
-                        item = work_queue.get_nowait()
-                        batch.append(item)
-                    except queue.Empty:
-                        break
+            if progress_callback:
+                for si, li, lec in batch:
+                    progress_callback({
+                        "type": "lecture_status",
+                        "sectionIdx": si, "lectureIdx": li,
+                        "status": "working",
+                        "message": f"{lec['title'][:40]}",
+                    })
 
-                if not batch:
-                    break  # Queue empty, done
+            try:
+                results = self.fetch_transcripts_batch(batch_ids)
+            except Exception as e:
+                self.log(f"Batch error: {e}")
+                results = {lid: {"s": "error"} for lid in batch_ids}
 
-                batch_ids = [item[2]["id"] for item in batch]
+            for si, li, lec in batch:
+                result = results.get(lec["id"], {"s": "error"})
+                status = result.get("s", "error")
+                transcript = result.get("t", "")
 
-                # Report working
-                if progress_callback:
-                    for si, li, lec in batch:
+                if status == "ok" and transcript:
+                    self.save_transcript(self.sections[si], lec, li + 1, transcript)
+                    completed += 1
+                    self.log(f"  Saved: {lec['title'][:50]} ({len(transcript)} chars)")
+                    if progress_callback:
                         progress_callback({
-                            "type": "lecture_status",
-                            "sectionIdx": si, "lectureIdx": li,
-                            "status": "working",
-                            "message": f"[W{worker_id}] {lec['title'][:40]}",
+                            "type": "lecture_status", "sectionIdx": si, "lectureIdx": li,
+                            "status": "saved", "message": f"Saved: {lec['title'][:50]}",
+                            "size": len(transcript),
+                        })
+                elif status in ("no_captions", "no_english", "api_error"):
+                    completed += 1
+                    if progress_callback:
+                        progress_callback({
+                            "type": "lecture_status", "sectionIdx": si, "lectureIdx": li,
+                            "status": "skipped", "message": f"Skipped ({status})",
+                        })
+                else:
+                    failed += 1
+                    self.log(f"  Failed ({status}): {lec['title'][:50]}")
+                    if progress_callback:
+                        progress_callback({
+                            "type": "lecture_status", "sectionIdx": si, "lectureIdx": li,
+                            "status": "failed", "message": f"Failed ({status})",
                         })
 
-                # Fetch batch
-                try:
-                    results = self.fetch_transcripts_batch(batch_ids)
-                except Exception as e:
-                    self.log(f"  [W{worker_id}] Batch error: {e}")
-                    results = {lid: {"s": "error"} for lid in batch_ids}
+            time.sleep(0.3)
 
-                # Process results
-                with lock:
-                    for si, li, lec in batch:
-                        result = results.get(lec["id"], {"s": "error"})
-                        status = result.get("s", "error")
-                        transcript = result.get("t", "")
-                        size = None
-
-                        if status == "ok" and transcript:
-                            self.save_transcript(self.sections[si], lec, li + 1, transcript)
-                            completed[0] += 1
-                            size = len(transcript)
-                            self.log(f"  [W{worker_id}] Saved: {lec['title'][:50]} ({len(transcript)} chars)")
-                            if progress_callback:
-                                progress_callback({
-                                    "type": "lecture_status", "sectionIdx": si, "lectureIdx": li,
-                                    "status": "saved", "message": f"Saved: {lec['title'][:50]}",
-                                    "size": size,
-                                })
-                        elif status in ("no_captions", "no_english", "api_error"):
-                            completed[0] += 1
-                            if progress_callback:
-                                progress_callback({
-                                    "type": "lecture_status", "sectionIdx": si, "lectureIdx": li,
-                                    "status": "skipped", "message": f"Skipped ({status})",
-                                })
-                        else:
-                            failed[0] += 1
-                            self.log(f"  [W{worker_id}] Failed ({status}): {lec['title'][:50]}")
-                            if progress_callback:
-                                progress_callback({
-                                    "type": "lecture_status", "sectionIdx": si, "lectureIdx": li,
-                                    "status": "failed", "message": f"Failed ({status})",
-                                })
-
-                # Small delay between batches per worker
-                time.sleep(0.3)
-
-        # Launch workers with staggered starts
-        threads = []
-        for i in range(num_threads):
-            t = threading.Thread(target=worker, args=(i + 1,), daemon=True)
-            threads.append(t)
-            t.start()
-            time.sleep(0.5)  # Stagger starts to avoid CDP stampede
-
-        # Wait for all workers
-        for t in threads:
-            t.join()
-
-        self.log(f"\nDone! {completed[0]} completed, {failed[0]} failed.")
+        self.log(f"\nDone! {completed} completed, {failed} failed.")
         if progress_callback:
-            progress_callback({"type": "scrape_finished", "completed": completed[0], "failed": failed[0]})
+            progress_callback({"type": "scrape_finished", "completed": completed, "failed": failed})
