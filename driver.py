@@ -20,3 +20,12 @@ class SeleniumDriverManager:
         self.version_main = version_main
         self._driver = None
         self._reconnecting = False
+
+    def _wrap_async_js(self, js_body: str) -> str:
+        """Wrap an async JS body in the execute_async_script callback shim."""
+        return (
+            "var cb = arguments[arguments.length - 1];\n"
+            "(async () => {\n"
+            f"{js_body}\n"
+            "})().catch(e => cb(JSON.stringify({error: e.message})));"
+        )
