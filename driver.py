@@ -52,3 +52,24 @@ class SeleniumDriverManager:
         options.user_data_dir = self.profile_dir
         self._driver = uc.Chrome(options=options, version_main=self.version_main)
         return self._driver
+
+    def is_logged_in(self) -> bool:
+        """Check whether the current page is past Udemy's login wall."""
+        if self._driver is None:
+            return False
+        url = self._driver.current_url or ""
+        if "join/login" in url or "join/signup" in url:
+            return False
+        sign_in_count = self._driver.execute_script(
+            "return document.querySelectorAll('a[href*=\"join/login\"], "
+            "button[data-purpose*=\"sign-in\"], a[data-purpose*=\"sign-in\"]').length;"
+        )
+        return sign_in_count == 0
+
+    def ensure_logged_in(self) -> None:
+        """Raise RuntimeError if not logged in."""
+        if not self.is_logged_in():
+            raise RuntimeError(
+                "Not logged in. Launch the scraper, log into Udemy once in "
+                "the Selenium window, then retry."
+            )

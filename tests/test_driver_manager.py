@@ -76,3 +76,48 @@ def test_connect_reuses_existing_driver(mock_uc):
     result = mgr.connect()
     assert result is fake_driver
     mock_uc.Chrome.assert_not_called()
+
+
+def test_is_logged_in_true_when_no_login_button():
+    mgr = SeleniumDriverManager()
+    fake_driver = MagicMock()
+    fake_driver.current_url = "https://www.udemy.com/course/xyz/learn"
+    fake_driver.execute_script.return_value = 0
+    mgr._driver = fake_driver
+    assert mgr.is_logged_in() is True
+
+
+def test_is_logged_in_false_when_login_url():
+    mgr = SeleniumDriverManager()
+    fake_driver = MagicMock()
+    fake_driver.current_url = "https://www.udemy.com/join/login"
+    mgr._driver = fake_driver
+    assert mgr.is_logged_in() is False
+
+
+def test_is_logged_in_false_when_signin_button_present():
+    mgr = SeleniumDriverManager()
+    fake_driver = MagicMock()
+    fake_driver.current_url = "https://www.udemy.com/course/xyz/learn"
+    fake_driver.execute_script.return_value = 1
+    mgr._driver = fake_driver
+    assert mgr.is_logged_in() is False
+
+
+def test_ensure_logged_in_raises_when_not_logged_in():
+    mgr = SeleniumDriverManager()
+    fake_driver = MagicMock()
+    fake_driver.current_url = "https://www.udemy.com/join/login"
+    mgr._driver = fake_driver
+    import pytest
+    with pytest.raises(RuntimeError, match="Not logged in"):
+        mgr.ensure_logged_in()
+
+
+def test_ensure_logged_in_passes_when_logged_in():
+    mgr = SeleniumDriverManager()
+    fake_driver = MagicMock()
+    fake_driver.current_url = "https://www.udemy.com/course/xyz/learn"
+    fake_driver.execute_script.return_value = 0
+    mgr._driver = fake_driver
+    mgr.ensure_logged_in()
