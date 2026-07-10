@@ -101,3 +101,8 @@ class SeleniumDriverManager:
             except Exception:
                 pass
             self._driver = None
+
+
+# Single shared instance — survives across ScraperSession instances
+# so the driver stays alive on the login-wall path (first-run setup).
+shared_manager = SeleniumDriverManager()
