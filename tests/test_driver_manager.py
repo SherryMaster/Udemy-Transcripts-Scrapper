@@ -52,3 +52,27 @@ def test_execute_async_js_returns_error_string_on_js_error():
     mgr._driver = fake_driver
     out = mgr.execute_async_js("js", timeout=60)
     assert out == '{"error": "boom"}'
+
+
+@patch("driver.uc")
+def test_connect_creates_driver_with_profile_and_version(mock_uc):
+    mgr = SeleniumDriverManager(profile_dir="/tmp/fake-profile", version_main=148)
+    fake_driver = MagicMock()
+    mock_uc.Chrome.return_value = fake_driver
+    result = mgr.connect()
+    assert result is fake_driver
+    mock_uc.Chrome.assert_called_once()
+    kwargs = mock_uc.Chrome.call_args.kwargs
+    assert kwargs["version_main"] == 148
+    options = kwargs["options"]
+    assert options.user_data_dir == "/tmp/fake-profile"
+
+
+@patch("driver.uc")
+def test_connect_reuses_existing_driver(mock_uc):
+    mgr = SeleniumDriverManager()
+    fake_driver = MagicMock()
+    mgr._driver = fake_driver
+    result = mgr.connect()
+    assert result is fake_driver
+    mock_uc.Chrome.assert_not_called()

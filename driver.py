@@ -5,6 +5,8 @@ ScraperSession instances (needed for the first-run login flow).
 """
 import os
 
+import undetected_chromedriver as uc
+
 
 class SeleniumDriverManager:
     PROFILE_DIR_DEFAULT = "~/.udemy-scraper-profile"
@@ -37,3 +39,16 @@ class SeleniumDriverManager:
         self._driver.set_script_timeout(timeout)
         wrapped = self._wrap_async_js(js_body)
         return self._driver.execute_async_script(wrapped)
+
+    def connect(self):
+        """Return the existing driver if alive, else launch a new one."""
+        if self._driver is not None:
+            try:
+                _ = self._driver.current_url
+                return self._driver
+            except Exception:
+                self._driver = None
+        options = uc.ChromeOptions()
+        options.user_data_dir = self.profile_dir
+        self._driver = uc.Chrome(options=options, version_main=self.version_main)
+        return self._driver
