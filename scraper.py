@@ -197,7 +197,7 @@ class UdemyScraper:
         try:
             raw = self._js(code, timeout=60)
             return json.loads(raw)
-        except (TimeoutException, JavascriptException, WebDriverException) as e:
+        except (TimeoutException, JavascriptException, WebDriverException, InvalidSessionIdException) as e:
             self.log(f"  Batch driver error ({type(e).__name__}): {str(e)[:80]}")
             if retries > 0 and len(lecture_ids) > 1:
                 time.sleep(0.5)
