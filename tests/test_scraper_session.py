@@ -83,8 +83,14 @@ def test_stop_check_halts_loop_mid_batch(mock_mgr):
         skip_discovery=True,
     )
 
+    # Only l1 (lectureIdx 0) got a "working" event; l2 (lectureIdx 1) was never started.
+    working = [e for e in events if e.get("type") == "lecture_status" and e["status"] == "working"]
+    assert len(working) == 1
+    assert working[0]["lectureIdx"] == 0
+    # Only one lecture was processed (l1), so completed+failed < total (2).
     finished = [e for e in events if e.get("type") == "scrape_finished"]
     assert len(finished) == 1
+    assert finished[0]["completed"] + finished[0]["failed"] == 1
 
 
 @patch("scraper.shared_manager")
