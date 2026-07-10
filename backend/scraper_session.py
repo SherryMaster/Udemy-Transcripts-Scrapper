@@ -5,7 +5,6 @@ import time
 
 from scraper import UdemyScraper
 from progress_tracker import ProgressTracker
-from driver import shared_manager
 
 
 NATIVE_TO_BOX = {
