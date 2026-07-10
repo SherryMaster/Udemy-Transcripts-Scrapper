@@ -1,4 +1,7 @@
+from unittest.mock import patch, MagicMock
+
 from backend.scraper_session import normalize_status, ScraperSession
+from scraper import UdemyScraper
 
 
 def test_normalize_status_mapping():
@@ -21,3 +24,87 @@ def test_session_wraps_callback_and_normalizes():
     assert ev["type"] == "lecture_status"
     assert ev["status"] == "success"
     assert ev["size"] == 99
+
+
+def _make_scraper_with_sections():
+    s = UdemyScraper(log_callback=lambda m: None)
+    s.course_id = 123
+    s.course_title = "Test Course"
+    s.output_dir = "/tmp/out"
+    s.sections = [
+        {"index": 1, "id": "sec1", "title": "S1", "folder_name": "01_S1",
+         "lectures": [{"id": "l1", "title": "L1"}, {"id": "l2", "title": "L2"}]}
+    ]
+    return s
+
+
+@patch("scraper.shared_manager")
+def test_sequential_batch_loop_emits_saved_events(mock_mgr):
+    mock_mgr.execute_async_js.return_value = '{"l1": {"s":"ok","t":"hello world"}, "l2": {"s":"ok","t":"foo bar"}}'
+
+    s = _make_scraper_with_sections()
+    s.save_transcript = MagicMock(return_value="/tmp/fake")
+
+    events = []
+    s.scrape_parallel(
+        base_dir="/tmp/out",
+        progress_callback=lambda ev: events.append(ev),
+        stop_check=lambda: False,
+        batch_size=10,
+        skip_discovery=True,
+    )
+
+    statuses = [e["status"] for e in events if e.get("type") == "lecture_status"]
+    assert "working" in statuses
+    assert statuses.count("saved") == 2
+    finished = [e for e in events if e.get("type") == "scrape_finished"]
+    assert len(finished) == 1
+    assert finished[0]["completed"] == 2
+    assert finished[0]["failed"] == 0
+
+
+@patch("scraper.shared_manager")
+def test_stop_check_halts_loop_mid_batch(mock_mgr):
+    mock_mgr.execute_async_js.return_value = '{}'
+
+    s = _make_scraper_with_sections()
+    events = []
+    call_count = [0]
+
+    def stop_check():
+        call_count[0] += 1
+        return call_count[0] > 1
+
+    s.scrape_parallel(
+        base_dir="/tmp/out",
+        progress_callback=lambda ev: events.append(ev),
+        stop_check=stop_check,
+        batch_size=1,
+        skip_discovery=True,
+    )
+
+    finished = [e for e in events if e.get("type") == "scrape_finished"]
+    assert len(finished) == 1
+
+
+@patch("scraper.shared_manager")
+def test_no_captions_status_is_skipped(mock_mgr):
+    mock_mgr.execute_async_js.return_value = '{"l1": {"s":"no_captions"}, "l2": {"s":"error"}}'
+
+    s = _make_scraper_with_sections()
+
+    events = []
+    s.scrape_parallel(
+        base_dir="/tmp/out",
+        progress_callback=lambda ev: events.append(ev),
+        stop_check=lambda: False,
+        batch_size=10,
+        skip_discovery=True,
+    )
+
+    statuses = [e["status"] for e in events if e.get("type") == "lecture_status"]
+    assert "skipped" in statuses
+    assert "failed" in statuses
+    finished = [e for e in events if e.get("type") == "scrape_finished"]
+    assert finished[0]["completed"] == 1
+    assert finished[0]["failed"] == 1
