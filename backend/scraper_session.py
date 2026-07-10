@@ -5,6 +5,7 @@ import time
 
 from scraper import UdemyScraper
 from progress_tracker import ProgressTracker
+from driver import shared_manager
 
 
 NATIVE_TO_BOX = {
@@ -129,6 +130,11 @@ class ScraperSession:
                                         "message": "Resumed", "size": None})
             self._emit_progress()
 
+            if num_threads and num_threads != 1:
+                self._emit({"type": "log",
+                            "message": f"num_threads={num_threads} ignored (single-driver sequential mode)",
+                            "level": "info"})
+
             self.scraper.scrape_parallel(
                 base_dir=output_dir,
                 progress_callback=self._on_scraper_event,
@@ -175,9 +181,7 @@ class ScraperSession:
 
     def _run_retry(self, to_retry: list):
         try:
-            scraper = UdemyScraper(log_callback=self._on_log)
-            scraper.course_id = self.scraper.course_id
-            scraper.output_dir = self.scraper.output_dir
+            scraper = self.scraper
             batch_ids = [item[2] for item in to_retry]
             results = scraper.fetch_transcripts_batch(batch_ids)
             for si, li, lid, title in to_retry:
