@@ -7,6 +7,7 @@ from fastapi.staticfiles import StaticFiles
 from pathlib import Path
 
 from backend.scraper_session import ScraperSession
+from driver import shared_manager
 
 app = FastAPI(title="Udemy Scraper")
 
@@ -101,3 +102,4 @@ async def ws_endpoint(ws: WebSocket):
 def shutdown_session():
     if app.state.session and getattr(app.state.session, "is_running", False):
         app.state.session.stop()
+    shared_manager.quit()
