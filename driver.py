@@ -73,3 +73,31 @@ class SeleniumDriverManager:
                 "Not logged in. Launch the scraper, log into Udemy once in "
                 "the Selenium window, then retry."
             )
+
+    def reconnect(self):
+        """Quit the dead driver and relaunch on the same profile. One-shot guard."""
+        if self._reconnecting:
+            return self._driver
+        self._reconnecting = True
+        try:
+            if self._driver is not None:
+                try:
+                    self._driver.quit()
+                except Exception:
+                    pass
+                self._driver = None
+            options = uc.ChromeOptions()
+            options.user_data_dir = self.profile_dir
+            self._driver = uc.Chrome(options=options, version_main=self.version_main)
+            return self._driver
+        finally:
+            self._reconnecting = False
+
+    def quit(self):
+        """Quit the driver and clear the reference."""
+        if self._driver is not None:
+            try:
+                self._driver.quit()
+            except Exception:
+                pass
+            self._driver = None

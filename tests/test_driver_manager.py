@@ -121,3 +121,42 @@ def test_ensure_logged_in_passes_when_logged_in():
     fake_driver.execute_script.return_value = 0
     mgr._driver = fake_driver
     mgr.ensure_logged_in()
+
+
+@patch("driver.uc")
+def test_reconnect_quits_old_and_relaunches(mock_uc):
+    mgr = SeleniumDriverManager(profile_dir="/tmp/fake-profile")
+    old_driver = MagicMock()
+    mgr._driver = old_driver
+    new_driver = MagicMock()
+    mock_uc.Chrome.return_value = new_driver
+    result = mgr.reconnect()
+    old_driver.quit.assert_called_once()
+    assert result is new_driver
+
+
+@patch("driver.uc")
+def test_reconnect_guarded_against_loops(mock_uc):
+    mgr = SeleniumDriverManager()
+    mgr._reconnecting = True
+    old_driver = MagicMock()
+    mgr._driver = old_driver
+    mock_uc.Chrome.return_value = MagicMock()
+    result = mgr.reconnect()
+    assert result is old_driver
+    mock_uc.Chrome.assert_not_called()
+
+
+def test_quit_calls_driver_quit_and_clears():
+    mgr = SeleniumDriverManager()
+    fake_driver = MagicMock()
+    mgr._driver = fake_driver
+    mgr.quit()
+    fake_driver.quit.assert_called_once()
+    assert mgr._driver is None
+
+
+def test_quit_when_no_driver_is_noop():
+    mgr = SeleniumDriverManager()
+    mgr.quit()
+    assert mgr._driver is None
