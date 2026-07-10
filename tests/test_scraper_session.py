@@ -1,5 +1,7 @@
 from unittest.mock import patch, MagicMock
 
+import pytest
+
 from backend.scraper_session import normalize_status, ScraperSession
 from scraper import UdemyScraper
 
@@ -114,3 +116,19 @@ def test_no_captions_status_is_skipped(mock_mgr):
     finished = [e for e in events if e.get("type") == "scrape_finished"]
     assert finished[0]["completed"] == 1
     assert finished[0]["failed"] == 1
+
+
+@patch("scraper.shared_manager")
+def test_js_json_raises_on_error_envelope(mock_mgr):
+    mock_mgr.execute_async_js.return_value = '{"error": "Failed to fetch"}'
+    s = UdemyScraper(log_callback=lambda m: None)
+    with pytest.raises(RuntimeError, match="JS error: Failed to fetch"):
+        s._js_json("some js")
+
+
+@patch("scraper.shared_manager")
+def test_js_json_returns_parsed_on_success(mock_mgr):
+    mock_mgr.execute_async_js.return_value = '{"id": 123, "title": "Course"}'
+    s = UdemyScraper(log_callback=lambda m: None)
+    out = s._js_json("some js")
+    assert out == {"id": 123, "title": "Course"}

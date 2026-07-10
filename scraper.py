@@ -70,9 +70,17 @@ class UdemyScraper:
         return shared_manager.execute_async_js(js_body, timeout=timeout)
 
     def _js_json(self, js_body: str, timeout: int = 30):
-        """Execute an async JS body and parse the result as JSON."""
+        """Execute an async JS body and parse the result as JSON.
+
+        The callback shim converts JS rejections into a {"error": <msg>} JSON
+        object, so check for that envelope here and raise a clear error rather
+        than letting callers hit a KeyError on missing fields.
+        """
         raw = self._js(js_body, timeout)
-        return json.loads(raw)
+        parsed = json.loads(raw)
+        if isinstance(parsed, dict) and "error" in parsed:
+            raise RuntimeError(f"JS error: {parsed['error']}")
+        return parsed
 
     def discover_course(self) -> dict:
         """Discover course info: ID, title, and full curriculum."""

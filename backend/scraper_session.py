@@ -175,6 +175,7 @@ class ScraperSession:
         if not to_retry:
             return
         self._emit_progress()
+        self.is_running = True
         thread = threading.Thread(target=self._run_retry, args=(to_retry,), daemon=True)
         thread.start()
 
@@ -206,6 +207,8 @@ class ScraperSession:
             self._emit_progress()
         except Exception as e:
             self._emit({"type": "error", "message": f"Retry error: {e}"})
+        finally:
+            self.is_running = False
 
     async def events(self):
         import asyncio
