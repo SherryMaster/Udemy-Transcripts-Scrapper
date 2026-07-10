@@ -44,7 +44,7 @@ class SeleniumDriverManager:
         """Return the existing driver if alive, else launch a new one."""
         if self._driver is not None:
             try:
-                _ = self._driver.current_url
+                self._driver.current_url
                 return self._driver
             except Exception:
                 self._driver = None

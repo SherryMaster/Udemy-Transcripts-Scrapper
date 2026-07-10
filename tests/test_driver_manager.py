@@ -1,5 +1,7 @@
 import os
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch, MagicMock, PropertyMock
+from selenium.common.exceptions import WebDriverException
+import pytest
 from driver import SeleniumDriverManager
 
 
@@ -30,6 +32,7 @@ def test_wrap_async_js_handles_empty_body():
     mgr = SeleniumDriverManager()
     wrapped = mgr._wrap_async_js("")
     assert "cb(JSON.stringify(" in wrapped
+
 
 def test_execute_async_js_calls_execute_async_script_and_returns_string():
     mgr = SeleniumDriverManager()
@@ -78,6 +81,20 @@ def test_connect_reuses_existing_driver(mock_uc):
     mock_uc.Chrome.assert_not_called()
 
 
+@patch("driver.uc")
+def test_connect_relaunches_when_existing_driver_is_dead(mock_uc):
+    mgr = SeleniumDriverManager(profile_dir="/tmp/fake-profile")
+    dead_driver = MagicMock()
+    type(dead_driver).current_url = PropertyMock(side_effect=WebDriverException("session gone"))
+    mgr._driver = dead_driver
+    new_driver = MagicMock()
+    mock_uc.Chrome.return_value = new_driver
+    result = mgr.connect()
+    assert result is new_driver
+    mock_uc.Chrome.assert_called_once()
+    assert mgr._driver is new_driver
+
+
 def test_is_logged_in_true_when_no_login_button():
     mgr = SeleniumDriverManager()
     fake_driver = MagicMock()
@@ -109,7 +126,6 @@ def test_ensure_logged_in_raises_when_not_logged_in():
     fake_driver = MagicMock()
     fake_driver.current_url = "https://www.udemy.com/join/login"
     mgr._driver = fake_driver
-    import pytest
     with pytest.raises(RuntimeError, match="Not logged in"):
         mgr.ensure_logged_in()
 
