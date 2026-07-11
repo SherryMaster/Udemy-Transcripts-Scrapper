@@ -16,9 +16,7 @@ import shutil
 import urllib.request
 import zipfile
 
-from selenium import webdriver
-from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.chrome.service import Service
+import undetected_chromedriver as uc
 
 logger = logging.getLogger(__name__)
 
@@ -182,7 +180,7 @@ def _ensure_chromedriver() -> str:
 class SeleniumDriverManager:
     PROFILE_DIR_DEFAULT = "~/.udemy-scraper-profile"
 
-    def __init__(self, profile_dir=None):
+    def __init__(self, profile_dir=None, version_main=None):
         if profile_dir is None:
             env = os.environ.get("UDEMY_SCRAPER_PROFILE")
             if env:
@@ -194,6 +192,7 @@ class SeleniumDriverManager:
         else:
             logger.info("[DriverManager] Profile: %s", profile_dir)
         self.profile_dir = profile_dir
+        self.version_main = version_main
         self._driver = None
         self._reconnecting = False
         self._last_error = None
@@ -259,21 +258,22 @@ class SeleniumDriverManager:
         except Exception as e:
             logger.error("[DriverManager] --version FAILED: %s", e)
 
-        service = Service(executable_path=chromedriver_path)
-
-        options = Options()
+        options = uc.ChromeOptions()
         if chrome_binary:
             options.binary_location = chrome_binary
+        options.user_data_dir = self.profile_dir
         options.add_argument("--no-sandbox")
         options.add_argument("--disable-dev-shm-usage")
-        options.add_argument(f"--user-data-dir={self.profile_dir}")
         # Anti-detection flags
         options.add_argument("--disable-blink-features=AutomationControlled")
         options.add_experimental_option("excludeSwitches", ["enable-automation"])
         options.add_experimental_option("useAutomationExtension", False)
 
         logger.info("[DriverManager] Calling webdriver.Chrome()...")
-        driver = webdriver.Chrome(service=service, options=options)
+        chrome_kwargs = {"options": options, "driver_executable_path": chromedriver_path}
+        if self.version_main is not None:
+            chrome_kwargs["version_main"] = self.version_main
+        driver = uc.Chrome(**chrome_kwargs)
         logger.info("[DriverManager] Chrome launched in %.2fs — URL: %s",
                      time.time() - t0, driver.current_url)
         return driver
