@@ -32,16 +32,10 @@ ScraperUI.prototype.mount = function (container) {
         </div>
         <div class="slider-row">
           <label class="field-label" style="margin:0">Batch size</label>
-          <input type="range" class="slider" id="batch" min="1" max="15" value="5" />
-          <div class="slider-val" id="batch-val">5</div>
+          <input type="range" class="slider" id="batch" min="1" max="50" value="10" />
+          <div class="slider-val" id="batch-val">10</div>
         </div>
         <div style="font-size:10px;color:var(--text-muted);margin-bottom:10px">lectures per batch</div>
-        <div class="slider-row">
-          <label class="field-label" style="margin:0">Threads</label>
-          <input type="range" class="slider" id="threads" min="1" max="6" value="3" style="max-width:80px" />
-          <div class="slider-val" id="threads-val">3</div>
-          <div class="slider-cap">parallel workers</div>
-        </div>
         <button class="btn-primary" id="start">Start Scraping</button>
         <div class="btn-row">
           <button class="btn-ghost" id="resume" disabled>Resume</button>
@@ -93,7 +87,6 @@ ScraperUI.prototype.mount = function (container) {
   this.els = {
     url: document.getElementById('url'), dir: document.getElementById('dir'),
     batch: document.getElementById('batch'), batchVal: document.getElementById('batch-val'),
-    threads: document.getElementById('threads'), threadsVal: document.getElementById('threads-val'),
     start: document.getElementById('start'), resume: document.getElementById('resume'),
     stop: document.getElementById('stop'), browse: document.getElementById('browse'),
     progCount: document.getElementById('prog-count'), progFill: document.getElementById('prog-fill'),
@@ -119,7 +112,6 @@ ScraperUI.prototype._defaultDir = function () {
 ScraperUI.prototype.bindControls = function () {
   const self = this;
   this.els.batch.addEventListener('input', () => { this.els.batchVal.textContent = this.els.batch.value; });
-  this.els.threads.addEventListener('input', () => { this.els.threadsVal.textContent = this.els.threads.value; });
 
   this.els.start.addEventListener('click', () => this._start());
   this.els.resume.addEventListener('click', () => this._resume());
@@ -171,7 +163,7 @@ ScraperUI.prototype._start = function () {
   }
   this._post('/api/start', {
     url, outputDir: this.els.dir.value.trim(),
-    batchSize: +this.els.batch.value, numThreads: +this.els.threads.value,
+    batchSize: +this.els.batch.value, numThreads: 1,
   });
 };
 
@@ -347,14 +339,14 @@ ScraperUI.prototype._lockControls = function (locked) {
   this.els.resume.disabled = locked;
   this.els.stop.disabled = !locked;
   this.els.url.disabled = locked; this.els.dir.disabled = locked;
-  this.els.batch.disabled = locked; this.els.threads.disabled = locked;
+  this.els.batch.disabled = locked;
 };
 
 ScraperUI.prototype._resetButtons = function (idle) {
   this.els.start.disabled = false;
   this.els.stop.disabled = true;
   this.els.url.disabled = false; this.els.dir.disabled = false;
-  this.els.batch.disabled = false; this.els.threads.disabled = false;
+  this.els.batch.disabled = false;
 };
 
 ScraperUI.prototype._onBoxHover = function (e) {
